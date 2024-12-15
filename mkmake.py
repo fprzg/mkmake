@@ -2,6 +2,12 @@
 
 import argparse
 import re
+import sys
+
+class NameFieldNotIncludedError(Exception):
+	"""Exception thrown when MakefileRule.from_str is called without a NAME parameter"""
+	def __init__(self, message="Cannot create a MakefileRule without a name"):
+		super().__init__(message)
 
 class MakefileRule:
 	phony = True
@@ -26,7 +32,7 @@ class MakefileRule:
 	@classmethod
 	def from_dict(cls, rule_dict):
 		if rule_dict["NAME"] == None:
-			raise ValueError("Cannot create a MakefileRule without a name")
+			raise NameFieldNotIncludedError
 
 		return cls(rule_dict["NAME"],
 			phony=rule_dict["PHONY"],
@@ -44,7 +50,7 @@ class MakefileRule:
 
 		rule_dict = {
 			"PHONY": False,
-			"NAME": "",
+			"NAME": None,
 			"DESC": None,
 			"REQ": [],
 			"STEP": [],
@@ -59,7 +65,7 @@ class MakefileRule:
 					rule_dict[keyword] = True
 				case "NAME":
 					if content == "" or content == None:
-						raise ValueError("NAME cannot be empty")
+						raise NameFieldNotIncludedError
 					rule_dict[keyword] = content
 				case "DESC":
 					rule_dict[keyword] = content
@@ -117,13 +123,21 @@ def main():
 	if args.disable_phony:
 		MakefileRule.disable_phony()
 
+	if not args.add_default_rules and len(args.rules) == 0:
+		parser.print_help()
+		sys.exit(1)
+
 	if args.add_default_rules:
 		rules.add_rule(MakefileRule.from_params('help', description='shows this message.', recipe=["@echo 'Usage'", "@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' | sed -e 's/^/ /'" ]))
 		rules.add_rule(MakefileRule.from_params('confirm', description='asks the user for confirmation.', recipe=["@echo -n 'Are you sure? [y/N] ' && read ans && [ $${ans:-N} = y ]"]))
 
 	for rule in args.rules:
-		rules.add_rule_str(rule)
-
+		try:
+			rules.add_rule_str(rule)
+		except NameFieldNotIncludedError as e:
+			print(f"Error: '{e}' with rule '{rule}'.")
+			sys.exit(1)
+	
 	if args.print:
 		print(rules)
 	else:
